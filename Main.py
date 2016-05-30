@@ -45,30 +45,35 @@ class AutoReserve():
         if html.find("操作成功")>-1:
              return True
         else:  raise Exception(html)
+    #个人中心的信息
     def __getInfo(self):
         infoUrl = 'http://libreserve.sau.edu.cn/ClientWeb/xcus/a/center.aspx?_=1464430377548'
         request = urllib2.Request(infoUrl)
         html = opener.open(request).read()
         return  html
-
-    def getReserveInfo(self,date,devId):
+    #dev_id:100457475 date:2016-05-29 仅仅是预约座位的信息
+    def getReservedSeatInfo(self,date,devId):
         url="http://libreserve.sau.edu.cn/ClientWeb/pro/ajax/device.aspx?dev_id="+devId+"&date="+date+"&act=get_rsv_sta&_=1464491157237"
         request = urllib2.Request(url)
         html = opener.open(request).read()
         print html
         return html
+
+    def getStartAndEndTime(self):
+        html=self.__getInfo()
+        index = html.find("start='")
+        start = html[index + 7:index + 23]
+        end = html[index + 30:index + 46]
+        return urllib.quote_plus(start),urllib.quote_plus(end)
+
     def getReserveId(self):
         html=self.__getInfo()
         start=html.find("rsvId='")
         if start!=-1:
           id=html[start+7:start+16]
-          print "in getReserveId" + str(id)
+          #print "in getReserveId" + str(id)
           return id
         else :  raise Exception("no resvId")
-    def loginAndUpdate(self,userId,pwd,start,end):#延迟半小时
-        self.login(userId,pwd)
-        resvId = self.getReserveId()
-        self.update(resvId,start,end)
     def __addHalfHour(self,s):#超过20:30的不再增加
         h=s[11:13]
         h=int(h)
@@ -126,17 +131,17 @@ class AutoReserve():
         mon=t.tm_mon
         day=t.tm_mday
         if num==0:
-            start="07%3A50"
-            end="11%3A50"
-            print "预约 0750-1150"
+            start="07:50"
+            end="11:50"
+            print "预约 ",start+" to "+end
         if num==1:
-            start="12%3A40"
-            end="16%3A40"
-            print "预约 12-40-16-40"
+            start="12:40"
+            end="16:40"
+            print "预约 ",start+" to "+end
         if num==2:
-            start="17%3A30"
-            end="21%3A30"
-            print "预约 1730-2130"
+            start="17:30"
+            end="21:30"
+            print "预约 ",start+" to "+end
         year,mon,day=self.__dayPlus(year,mon,day)
         year=str(year)
         mon=str(mon)
@@ -145,31 +150,38 @@ class AutoReserve():
              mon="0"+mon
         if len(day)<2:
              day="0"+day
-        t=year+"-"+mon+"-"+day+"+"
-        self.reserve("100457475",t+start,t+end)
+        t=year+"-"+mon+"-"+day+" "
+        self.reserve("100457475",urllib.quote_plus(t+start),urllib.quote_plus(t+end))
         self.__save(t+start+"\n"+t+end+"\n","aw")
     def __save(self,str,method):
         fp = open("/Users/ZDQ/Documents/Develop/Python/reserve", method)
         fp.write(str)
         fp.close()
+    def __printUserReservedInfo(self,order,id,start,end):
+        print order+"User:",id
+        print "startTime:",start
+        print "endTime:",end
+
     #会自动从文件中读取数据 预约结束后会自动预约明天的座位
     def updatePerHalfHour(self):
 
         fp=open("/Users/ZDQ/Documents/Develop/Python/reserve", 'r')
         firstUser=fp.readline().strip()
         firstPwd=fp.readline().strip()
-        firstStart=fp.readline().strip()
-        firstEnd=fp.readline().strip()
+        self.__printUserReservedInfo("first",firstUser,fp.readline().strip(),fp.readline().strip())
         secondUser=fp.readline().strip()
         secondPwd=fp.readline().strip()
-        secondStart =fp.readline().strip()
-        secondEnd = fp.readline().strip()
+        self.__printUserReservedInfo("second", secondUser, fp.readline().strip(), fp.readline().strip())
         thirdUser=fp.readline().strip()
         thirdPwd=fp.readline().strip()
-        thirdStart = fp.readline().strip()
-
-        thirdEnd =fp.readline().strip()
+        self.__printUserReservedInfo("third", thirdUser, fp.readline().strip(), fp.readline().strip())
         fp.close()
+        self.login(firstUser,firstPwd)
+        firstStart,firstEnd=self.getStartAndEndTime()
+        self.login(secondUser, secondPwd)
+        secondStart, secondEnd = self.getStartAndEndTime()
+        self.login(thirdUser, thirdPwd)
+        thirdStart,thirdEnd = self.getStartAndEndTime()
         i=0;
         thirdIsOver=False
         secondIsOver=False
@@ -181,19 +193,16 @@ class AutoReserve():
              i+=1
              print "当前是",i,"次"
              if thirdUser !="":
-                 print "third:",thirdUser
-                 thirdStart=self.__addHalfHour(thirdStart)
-                 print "startTime",thirdStart
-                 print "endTime",thirdEnd
-                 #thirdEnd=addHalfHour(thirdEnd)
-
                  if not thirdIsOver:
+                     self.login(thirdUser, thirdPwd)
+                     resvId = self.getReserveId()
+                     thirdStart = self.__addHalfHour(thirdStart)
+                     self.__printUserReservedInfo("third", thirdUser, thirdStart, thirdEnd)
                      print "预约时长"
+
                      if self.__isOverHour(thirdStart,thirdEnd)>60:
-                         self.loginAndUpdate(thirdUser, thirdPwd, thirdStart, thirdEnd)
+                         self.update(resvId,thirdStart, thirdEnd)
                      else :
-                         self.login(thirdUser,thirdPwd)
-                         resvId=self.getReserveId()
                          self. delete(resvId)
                          thirdIsOver=True
                          print "third is Over"
@@ -201,19 +210,18 @@ class AutoReserve():
                          self.__reserveTom(0)
                            #  预约明天的
              if secondUser!="":
-                 print "second:",secondUser
-                 secondStart = self.__addHalfHour(secondStart)
-                 secondEnd = self.__addHalfHour(secondEnd)
-                 print "startTime", secondStart
-                 print "endTime", secondEnd
+
 
                  if not secondIsOver:
+                     self.login(secondUser,secondPwd)
+                     resvId=self.getReserveId()
+                     secondStart = self.__addHalfHour(secondStart)
+                     secondEnd = self.__addHalfHour(secondEnd)
+                     self.__printUserReservedInfo("second", secondUser, secondStart, secondEnd)
                      print "预约时长"
                      if self.__isOverHour(secondStart, secondEnd) >60:
-                         self.loginAndUpdate(secondUser, secondPwd,  secondStart, secondEnd, )
+                         self.update(resvId, secondStart, secondEnd, )
                      else:
-                         self.login(secondUser, secondPwd)
-                         resvId = self.getReserveId()
                          self.delete(resvId)
                          secondIsOver=True
                          print "second is Over"
@@ -221,19 +229,16 @@ class AutoReserve():
                          self.__reserveTom(1)
                       #  预约明天的
              if firstUser!="":
-                 print "first",firstUser
-                 print "startTime", firstStart
-                 print "endTime", firstEnd
-                 firstStart = self.__addHalfHour(firstStart)
-                 firstEnd = self.__addHalfHour(firstEnd)
                  if not firstIsOver:
+                     self.login(firstUser, firstPwd)
+                     resvId = self.getReserveId()
+                     firstStart = self.__addHalfHour(firstStart)
+                     firstEnd = self.__addHalfHour(firstEnd)
+                     self.__printUserReservedInfo("first", firstUser, firstStart, firstEnd)
                      print "预约时长"
                      if self.__isOverHour(firstStart, firstEnd) > 60:
-
-                         self.loginAndUpdate(firstUser, firstPwd,  firstStart, firstEnd)
+                         self.update(resvId,firstStart, firstEnd)
                      else:
-                         self.login(firstUser, firstPwd)
-                         resvId =self. getReserveId()
                          self.delete(resvId)
                          firstIsOver=True
                          print "first is Over"
@@ -304,25 +309,27 @@ if __name__=="__main__":
     # end = "2016-05-30+12%3A00"
     # resvId = ""  # 需要通过分析网页获取 或者 通过更新一次时间来获取
 
-    #autoReserve.login(userId,pwd)
-    autoReserve.updatePerHalfHour()
+    autoReserve.login(thirdUser,thirdPwd)
+    #autoReserve.updatePerHalfHour()
     #autoReserve.reserve(devId,start,end)
     #autoReserve.resvId=getReserveId()
     #autoReserve.update(resvId,start,end)
     #autoReserve.delete(resvId)
     # autoReserve.getReserveInfo("2016-05-30",devId)
-    # n=calculateSecondsTo0700()
-    # print  n
+    n=autoReserve.calculateSecondsTo0700()
+    print  n
     print "睡眠中"
-    #time.sleep(n)
+    time.sleep(n)
     print "开始"
-    # try :
-    #      autoReserve.updatePerHalfHour()
-    # except:
-    #       autoReserve.cancelAll()
+    try :
+          autoReserve.updatePerHalfHour()
+    except:
+          autoReserve.cancelAll()
 
 
 
+    #html=autoReserve.getReservedSeatInfo("2016-05-31","100457475")
 
+    #autoReserve.getReservedInfo()
 
 
