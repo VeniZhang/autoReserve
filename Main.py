@@ -120,7 +120,7 @@ class AutoReserve():
             else:
                 year += 1
                 mon = 1
-                day = 1
+            day = 1
         else:
          day += 1
         return year, mon, day
