@@ -104,7 +104,7 @@ class AutoReserve():
         m=m2-m1
         if m<0:
             h=h2-h1-1
-            m+60
+            m+＝60
         else :h=h2-h1
         temp=h*60+m
         print "in isOverHour  "+str(temp)
